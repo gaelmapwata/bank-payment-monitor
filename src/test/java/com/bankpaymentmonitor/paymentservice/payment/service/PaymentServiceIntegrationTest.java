@@ -4,6 +4,7 @@ import com.bankpaymentmonitor.paymentservice.payment.alert.PaymentAlert;
 import com.bankpaymentmonitor.paymentservice.payment.alert.PaymentAlertRepository;
 import com.bankpaymentmonitor.paymentservice.payment.alert.PaymentAlertStatus;
 import com.bankpaymentmonitor.paymentservice.payment.alert.PaymentAlertType;
+import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAuditRepository;
 import com.bankpaymentmonitor.paymentservice.payment.entity.Payment;
 import com.bankpaymentmonitor.paymentservice.payment.enums.PaymentStatus;
 import com.bankpaymentmonitor.paymentservice.payment.repository.PaymentRepository;
@@ -18,6 +19,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import com.bankpaymentmonitor.paymentservice.payment.dto.PaymentResponseDTO;
+import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAudit;
+import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAuditAction;
+import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAuditRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -40,6 +44,9 @@ class PaymentServiceIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private PaymentAuditRepository paymentAuditRepository;
 
     @Container
     static PostgreSQLContainer postgres =
@@ -218,6 +225,75 @@ class PaymentServiceIntegrationTest {
 
         assertNotNull(
                 resolvedAlert.getResolvedAt()
+        );
+    }
+    @Test
+    void shouldPersistAuditWhenPaymentMovesToProcessing() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // 1. Créer un paiement PENDING
+        Payment payment = new Payment(
+                "PAY-INT-AUDIT-001",
+                "DEMO_SYSTEM",
+                "INT-AUDIT-TXN-001",
+                "BR-001",
+                new BigDecimal("250.00"),
+                "USD",
+                now
+        );
+
+        paymentRepository.saveAndFlush(payment);
+
+        // 2. Effectuer la vraie transition métier
+        PaymentResponseDTO response =
+                paymentService.markAsProcessing(
+                        payment.getReference()
+                );
+
+        // 3. Forcer l'écriture SQL puis vider le contexte JPA
+        entityManager.flush();
+        entityManager.clear();
+
+        // 4. Vérifier le résultat métier
+        assertEquals(
+                "PROCESSING",
+                response.status()
+        );
+
+        // 5. Lire l'audit depuis PostgreSQL
+        List<PaymentAudit> audits =
+                paymentAuditRepository
+                        .findByPaymentReferenceOrderByOccurredAtAsc(
+                                payment.getReference()
+                        );
+
+        assertEquals(1, audits.size());
+
+        PaymentAudit audit = audits.get(0);
+
+        assertEquals(
+                "PAY-INT-AUDIT-001",
+                audit.getPaymentReference()
+        );
+
+        assertEquals(
+                PaymentAuditAction.STATUS_CHANGE,
+                audit.getAction()
+        );
+
+        assertEquals(
+                PaymentStatus.PENDING,
+                audit.getPreviousStatus()
+        );
+
+        assertEquals(
+                PaymentStatus.PROCESSING,
+                audit.getNewStatus()
+        );
+
+        assertNotNull(
+                audit.getOccurredAt()
         );
     }
 }

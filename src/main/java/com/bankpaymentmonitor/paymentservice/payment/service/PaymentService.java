@@ -1,6 +1,7 @@
 package com.bankpaymentmonitor.paymentservice.payment.service;
 
 import com.bankpaymentmonitor.paymentservice.payment.alert.PaymentAlertService;
+import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAuditService;
 import com.bankpaymentmonitor.paymentservice.payment.dto.PaymentCreateDTO;
 import com.bankpaymentmonitor.paymentservice.payment.dto.PaymentResponseDTO;
 import com.bankpaymentmonitor.paymentservice.payment.entity.Payment;
@@ -27,6 +28,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final PaymentMapper paymentMapper;
     private final PaymentAlertService paymentAlertService;
+    private final PaymentAuditService paymentAuditService;
     private final Clock clock;
 
     public PaymentService(
@@ -34,13 +36,15 @@ public class PaymentService {
             PaymentRepository paymentRepository,
             PaymentMapper paymentMapper,
             Clock clock,
-            PaymentAlertService paymentAlertService
+            PaymentAlertService paymentAlertService,
+            PaymentAuditService paymentAuditService
     ) {
         this.monitoringProperties = monitoringProperties;
         this.paymentRepository = paymentRepository;
         this.paymentMapper = paymentMapper;
         this.clock = clock;
         this.paymentAlertService = paymentAlertService;
+        this.paymentAuditService = paymentAuditService;
 
     }
 
@@ -116,6 +120,7 @@ public class PaymentService {
     public PaymentResponseDTO markAsProcessing(String reference) {
 
         Payment payment = findPaymentByReference(reference);
+        PaymentStatus previousStatus = payment.getStatus();
 
         payment.markAsProcessing(
                 LocalDateTime.now(clock)
@@ -125,6 +130,12 @@ public class PaymentService {
                 payment.getReference()
         );
 
+        paymentAuditService.recordStatusChange(
+                payment.getReference(),
+                previousStatus,
+                payment.getStatus()
+        );
+
         return paymentMapper.toResponseDTO(payment);
     }
     @Transactional
@@ -132,7 +143,15 @@ public class PaymentService {
 
         Payment payment = findPaymentByReference(reference);
 
+        PaymentStatus previousStatus = payment.getStatus();
+
         payment.markAsSuccess(LocalDateTime.now(clock));
+
+        paymentAuditService.recordStatusChange(
+                payment.getReference(),
+                previousStatus,
+                payment.getStatus()
+        );
 
         return paymentMapper.toResponseDTO(payment);
     }
@@ -141,7 +160,15 @@ public class PaymentService {
 
         Payment payment = findPaymentByReference(reference);
 
+        PaymentStatus previousStatus = payment.getStatus();
+
         payment.markAsFailed(LocalDateTime.now(clock));
+
+        paymentAuditService.recordStatusChange(
+                payment.getReference(),
+                previousStatus,
+                payment.getStatus()
+        );
 
         return paymentMapper.toResponseDTO(payment);
     }

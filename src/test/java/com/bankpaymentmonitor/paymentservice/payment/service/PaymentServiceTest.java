@@ -2,6 +2,7 @@ package com.bankpaymentmonitor.paymentservice.payment.service;
 
 import com.bankpaymentmonitor.paymentservice.config.PaymentMonitoringProperties;
 import com.bankpaymentmonitor.paymentservice.payment.alert.PaymentAlertService;
+import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAuditService;
 import com.bankpaymentmonitor.paymentservice.payment.dto.PaymentCreateDTO;
 import com.bankpaymentmonitor.paymentservice.payment.dto.PaymentResponseDTO;
 import com.bankpaymentmonitor.paymentservice.payment.entity.Payment;
@@ -42,6 +43,9 @@ class PaymentServiceTest {
     @Mock
     private PaymentAlertService paymentAlertService;
 
+    @Mock
+    private PaymentAuditService paymentAuditService;
+
     LocalDateTime now =
             LocalDateTime.of(2026, 10, 1, 12, 0);
 
@@ -67,7 +71,8 @@ class PaymentServiceTest {
                 paymentRepository,
                 paymentMapper,
                 fixedClock,
-                paymentAlertService
+                paymentAlertService,
+                paymentAuditService
         );
     }
 
@@ -315,6 +320,12 @@ class PaymentServiceTest {
                 .resolveOpenAlerts(
                         payment.getReference()
                 );
+        verify(paymentAuditService)
+                .recordStatusChange(
+                        "PAY-007",
+                        PaymentStatus.PENDING,
+                        PaymentStatus.PROCESSING
+                );
     }
     @Test
     void shouldNotResolveAlertsWhenMarkAsProcessingFails() {
@@ -349,6 +360,13 @@ class PaymentServiceTest {
         // aucune alerte ne doit être résolue
         verify(paymentAlertService, never())
                 .resolveOpenAlerts(anyString());
+
+        verify(paymentAuditService, never())
+                .recordStatusChange(
+                        anyString(),
+                        any(PaymentStatus.class),
+                        any(PaymentStatus.class)
+                );
     }
     @Test
     void shouldThrowExceptionWhenMarkingUnknownPaymentAsProcessing() {
@@ -396,6 +414,12 @@ class PaymentServiceTest {
         assertEquals("PAY-008", response.reference());
 
         verify(paymentRepository).findByReference("PAY-008");
+        verify(paymentAuditService)
+                .recordStatusChange(
+                        "PAY-008",
+                        PaymentStatus.PROCESSING,
+                        PaymentStatus.SUCCESS
+                );
     }
     @Test
     void shouldThrowExceptionWhenMarkingPendingPaymentAsSuccess() {
@@ -429,6 +453,12 @@ class PaymentServiceTest {
         assertEquals(PaymentStatus.PENDING, payment.getStatus());
 
         verify(paymentRepository).findByReference("PAY-009");
+        verify(paymentAuditService, never())
+                .recordStatusChange(
+                        anyString(),
+                        any(PaymentStatus.class),
+                        any(PaymentStatus.class)
+                );
     }
     @Test
     void shouldMarkPaymentAsFailed(){
@@ -456,6 +486,12 @@ class PaymentServiceTest {
         assertEquals("PAY-010", response.reference());
 
         verify(paymentRepository).findByReference("PAY-010");
+        verify(paymentAuditService)
+                .recordStatusChange(
+                        "PAY-010",
+                        PaymentStatus.PROCESSING,
+                        PaymentStatus.FAILED
+                );
 
     }
     @Test
@@ -640,6 +676,40 @@ class PaymentServiceTest {
                 .findByStatusAndCreatedAtBefore(
                         any(PaymentStatus.class),
                         any(LocalDateTime.class)
+                );
+    }
+    @Test
+    void shouldNotCreateAuditWhenMarkAsFailedFails() {
+
+        Payment payment = new Payment(
+                "PAY-011",
+                "DEMO_SYSTEM",
+                "TXN-011",
+                "BR-001",
+                new BigDecimal("200.00"),
+                "USD",
+                now
+        );
+
+        // Le paiement est encore PENDING
+        when(paymentRepository.findByReference("PAY-011"))
+                .thenReturn(Optional.of(payment));
+
+        assertThrows(
+                InvalidPaymentStatusTransitionException.class,
+                () -> paymentService.markAsFailed("PAY-011")
+        );
+
+        assertEquals(
+                PaymentStatus.PENDING,
+                payment.getStatus()
+        );
+
+        verify(paymentAuditService, never())
+                .recordStatusChange(
+                        anyString(),
+                        any(PaymentStatus.class),
+                        any(PaymentStatus.class)
                 );
     }
 }
