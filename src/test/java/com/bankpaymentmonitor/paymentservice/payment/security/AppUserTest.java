@@ -67,4 +67,49 @@ class AppUserTest {
                 )
         );
     }
+    @Test
+    void shouldChangeBranchForUser() {
+        AppUser user = new AppUser(
+                "john",
+                "encoded-password",
+                "BR-001",
+                Role.USER,
+                true
+        );
+
+        user.changeBranch("BR-002");
+
+        assertEquals("BR-002", user.getBranchCode());
+    }
+    @Test
+    void shouldRejectBlankBranchWhenChangingUserBranch() {
+        AppUser user = new AppUser(
+                "john",
+                "encoded-password",
+                "BR-001",
+                Role.USER,
+                true
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> user.changeBranch("   ")
+        );
+    }
+
+    @Test
+    void shouldRejectBranchChangeForAdmin() {
+        AppUser admin = new AppUser(
+                "admin",
+                "encoded-password",
+                null,
+                Role.ADMIN,
+                true
+        );
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> admin.changeBranch("BR-002")
+        );
+    }
 }

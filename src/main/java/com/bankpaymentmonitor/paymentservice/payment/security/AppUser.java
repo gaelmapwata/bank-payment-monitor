@@ -58,4 +58,20 @@ public class AppUser {
         this.role = role;
         this.enabled = enabled;
     }
+    public void changeBranch(String newBranchCode) {
+        if (role != Role.USER) {
+            throw new IllegalStateException(
+                    "Only a USER can be assigned to a branch"
+            );
+        }
+
+        if (newBranchCode == null || newBranchCode.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Branch code is required for a USER"
+            );
+        }
+
+        this.branchCode = newBranchCode;
+    }
+
 }

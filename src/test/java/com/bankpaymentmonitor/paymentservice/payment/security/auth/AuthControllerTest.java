@@ -215,4 +215,52 @@ class AuthControllerTest {
                 )
                 .andExpect(status().isUnauthorized());
     }
+    @Test
+    void shouldUseCurrentUserBranchAfterBranchChange() throws Exception {
+
+        String username = "branch-change-user";
+
+        AppUser user = new AppUser(
+                username,
+                passwordEncoder.encode("Test1234!"),
+                "BR-001",
+                Role.USER,
+                true
+        );
+
+        appUserRepository.save(user);
+
+        try {
+            // Le JWT est créé pendant que l'utilisateur appartient à BR-001
+            String token = jwtService.generateToken(username);
+
+            // Après création du JWT, l'utilisateur est déplacé vers BR-002
+            user.changeBranch("BR-002");
+            appUserRepository.save(user);
+
+            // Le même JWT ne doit plus donner accès à BR-001
+            mockMvc.perform(
+                            get("/api/payments/branch/BR-001")
+                                    .servletPath("/api")
+                                    .header(
+                                            "Authorization",
+                                            "Bearer " + token
+                                    )
+                    )
+                    .andExpect(status().isForbidden());
+            // 4. Le même token doit maintenant autoriser BR-002
+            mockMvc.perform(
+                            get("/api/payments/branch/BR-002")
+                                    .servletPath("/api")
+                                    .header(
+                                            "Authorization",
+                                            "Bearer " + token
+                                    )
+                    )
+                    .andExpect(status().isOk());
+
+        } finally {
+            appUserRepository.delete(user);
+        }
+    }
 }
