@@ -112,4 +112,49 @@ class AppUserTest {
                 () -> admin.changeBranch("BR-002")
         );
     }
+    @Test
+    void shouldPromoteUserToAdmin() {
+        AppUser user = new AppUser(
+                "john",
+                "encoded-password",
+                "BR-001",
+                Role.USER,
+                true
+        );
+
+        user.promoteToAdmin();
+
+        assertEquals(Role.ADMIN, user.getRole());
+        assertNull(user.getBranchCode());
+    }
+    @Test
+    void shouldDemoteAdminToUser() {
+        AppUser admin = new AppUser(
+                "admin",
+                "encoded-password",
+                null,
+                Role.ADMIN,
+                true
+        );
+
+        admin.demoteToUser("BR-002");
+
+        assertEquals(Role.USER, admin.getRole());
+        assertEquals("BR-002", admin.getBranchCode());
+    }
+    @Test
+    void shouldRejectDemotionToUserWithoutBranch() {
+        AppUser admin = new AppUser(
+                "admin",
+                "encoded-password",
+                null,
+                Role.ADMIN,
+                true
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> admin.demoteToUser("   ")
+        );
+    }
 }

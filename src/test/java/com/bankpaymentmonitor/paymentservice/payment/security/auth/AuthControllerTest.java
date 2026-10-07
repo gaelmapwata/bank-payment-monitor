@@ -263,4 +263,93 @@ class AuthControllerTest {
             appUserRepository.delete(user);
         }
     }
+    @Test
+    void shouldUseCurrentUserRoleAfterPromotionToAdmin() throws Exception {
+
+        String username = "promoted-admin-user";
+
+        AppUser user = new AppUser(
+                username,
+                passwordEncoder.encode("Test1234!"),
+                "BR-001",
+                Role.USER,
+                true
+        );
+
+        appUserRepository.save(user);
+
+        try {
+            // 1. JWT créé lorsque l'utilisateur est encore USER / BR-001
+            String token = jwtService.generateToken(username);
+
+            // 2. Promotion APRÈS émission du JWT
+            user.promoteToAdmin();
+            appUserRepository.save(user);
+
+            // 3. Le même JWT doit maintenant avoir les droits ADMIN
+            // Un ADMIN peut accéder à n'importe quelle agence.
+            mockMvc.perform(
+                            get("/api/payments/branch/BR-999")
+                                    .servletPath("/api")
+                                    .header(
+                                            "Authorization",
+                                            "Bearer " + token
+                                    )
+                    )
+                    .andExpect(status().isOk());
+
+        } finally {
+            appUserRepository.delete(user);
+        }
+    }
+    @Test
+    void shouldUseCurrentUserRoleAfterDemotionToUser() throws Exception {
+
+        String username = "demoted-admin-user";
+
+        AppUser admin = new AppUser(
+                username,
+                passwordEncoder.encode("Test1234!"),
+                null,
+                Role.ADMIN,
+                true
+        );
+
+        appUserRepository.save(admin);
+
+        try {
+            // 1. JWT créé lorsque l'utilisateur est encore ADMIN
+            String token = jwtService.generateToken(username);
+
+            // 2. Rétrogradation APRÈS émission du JWT
+            admin.demoteToUser("BR-002");
+            appUserRepository.save(admin);
+
+            // 3. Le même JWT ne doit plus donner accès
+            //    à une autre agence.
+            mockMvc.perform(
+                            get("/api/payments/branch/BR-999")
+                                    .servletPath("/api")
+                                    .header(
+                                            "Authorization",
+                                            "Bearer " + token
+                                    )
+                    )
+                    .andExpect(status().isForbidden());
+
+            // 4. Mais le USER doit avoir accès à sa nouvelle agence.
+            mockMvc.perform(
+                            get("/api/payments/branch/BR-002")
+                                    .servletPath("/api")
+                                    .header(
+                                            "Authorization",
+                                            "Bearer " + token
+                                    )
+                    )
+                    .andExpect(status().isOk());
+
+        } finally {
+            appUserRepository.delete(admin);
+        }
+    }
 }

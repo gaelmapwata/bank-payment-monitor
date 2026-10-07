@@ -73,5 +73,19 @@ public class AppUser {
 
         this.branchCode = newBranchCode;
     }
+    public void promoteToAdmin() {
+        this.role = Role.ADMIN;
+        this.branchCode = null;
+    }
+    public void demoteToUser(String branchCode) {
+        if (branchCode == null || branchCode.isBlank()) {
+            throw new IllegalArgumentException(
+                    "A USER must belong to a branch"
+            );
+        }
+
+        this.role = Role.USER;
+        this.branchCode = branchCode;
+    }
 
 }
