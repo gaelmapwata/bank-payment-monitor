@@ -9,6 +9,7 @@ import com.bankpaymentmonitor.paymentservice.payment.entity.Payment;
 import com.bankpaymentmonitor.paymentservice.payment.enums.PaymentStatus;
 import com.bankpaymentmonitor.paymentservice.payment.repository.PaymentRepository;
 import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +22,12 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import com.bankpaymentmonitor.paymentservice.payment.dto.PaymentResponseDTO;
 import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAudit;
 import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAuditAction;
+import com.bankpaymentmonitor.paymentservice.payment.security.CustomUserPrincipal;
+import com.bankpaymentmonitor.paymentservice.payment.security.AppUser;
+import com.bankpaymentmonitor.paymentservice.payment.security.Role;
+
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import com.bankpaymentmonitor.paymentservice.payment.audit.PaymentAuditRepository;
 
 import java.math.BigDecimal;
@@ -73,6 +80,11 @@ class PaymentServiceIntegrationTest {
                 "spring.datasource.password",
                 postgres::getPassword
         );
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -183,6 +195,7 @@ class PaymentServiceIntegrationTest {
         );
 
         paymentAlertRepository.saveAndFlush(alert);
+        authenticateTestUser();
 
         // 3. Appeler le vrai PaymentService
         PaymentResponseDTO response =
@@ -230,9 +243,9 @@ class PaymentServiceIntegrationTest {
     @Test
     void shouldPersistAuditWhenPaymentMovesToProcessing() {
 
+        // GIVEN : créer un paiement avec le statut PENDING
         LocalDateTime now = LocalDateTime.now();
 
-        // 1. Créer un paiement PENDING
         Payment payment = new Payment(
                 "PAY-INT-AUDIT-001",
                 "DEMO_SYSTEM",
@@ -245,55 +258,96 @@ class PaymentServiceIntegrationTest {
 
         paymentRepository.saveAndFlush(payment);
 
-        // 2. Effectuer la vraie transition métier
+        // Simuler un utilisateur authentifié de l'agence BR-001
+        authenticateTestUser();
+
+        // WHEN : effectuer une transition PENDING -> PROCESSING
         PaymentResponseDTO response =
                 paymentService.markAsProcessing(
                         payment.getReference()
                 );
 
-        // 3. Forcer l'écriture SQL puis vider le contexte JPA
+        // Forcer l'écriture SQL puis vider le contexte JPA
         entityManager.flush();
         entityManager.clear();
 
-        // 4. Vérifier le résultat métier
+        // THEN : vérifier la réponse du service
         assertEquals(
-                "PROCESSING",
+                PaymentStatus.PROCESSING.name(),
                 response.status()
         );
 
-        // 5. Lire l'audit depuis PostgreSQL
+        // Récupérer les audits réellement enregistrés en base
         List<PaymentAudit> audits =
                 paymentAuditRepository
                         .findByPaymentReferenceOrderByOccurredAtAsc(
                                 payment.getReference()
                         );
 
+        // Une seule transition doit produire un seul audit
         assertEquals(1, audits.size());
 
-        PaymentAudit audit = audits.get(0);
+        PaymentAudit savedAudit = audits.get(0);
 
+        // Vérifier la référence du paiement
         assertEquals(
-                "PAY-INT-AUDIT-001",
-                audit.getPaymentReference()
+                payment.getReference(),
+                savedAudit.getPaymentReference()
         );
 
+        // Vérifier le type d'action
         assertEquals(
                 PaymentAuditAction.STATUS_CHANGE,
-                audit.getAction()
+                savedAudit.getAction()
         );
 
+        // Vérifier les statuts avant et après
         assertEquals(
                 PaymentStatus.PENDING,
-                audit.getPreviousStatus()
+                savedAudit.getPreviousStatus()
         );
 
         assertEquals(
                 PaymentStatus.PROCESSING,
-                audit.getNewStatus()
+                savedAudit.getNewStatus()
         );
 
-        assertNotNull(
-                audit.getOccurredAt()
+        // Vérifier l'utilisateur qui a effectué l'opération
+        assertEquals(
+                "john",
+                savedAudit.getPerformedBy()
         );
+
+        // Vérifier l'agence de l'utilisateur
+        assertEquals(
+                "BR-001",
+                savedAudit.getBranchCode()
+        );
+
+        // Vérifier que la date de l'audit existe
+        assertNotNull(savedAudit.getOccurredAt());
+    }
+    private void authenticateTestUser() {
+
+        AppUser user = new AppUser(
+                "john",
+                "encoded-password",
+                "BR-001",
+                Role.USER,
+                true
+        );
+
+        CustomUserPrincipal principal =
+                new CustomUserPrincipal(user);
+
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                        principal,
+                        null,
+                        principal.getAuthorities()
+                );
+
+        SecurityContextHolder.getContext()
+                .setAuthentication(authentication);
     }
 }

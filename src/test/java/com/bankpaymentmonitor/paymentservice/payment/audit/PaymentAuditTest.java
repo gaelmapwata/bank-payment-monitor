@@ -163,4 +163,49 @@ class PaymentAuditTest {
 
         assertNull(audit.getId());
     }
+    @Test
+    void shouldCreatePaymentAuditWithActor() {
+
+        LocalDateTime occurredAt =
+                LocalDateTime.of(2026, 10, 8, 11, 0);
+
+        PaymentAudit audit = new PaymentAudit(
+                "PAY-AUDIT-001",
+                PaymentAuditAction.STATUS_CHANGE,
+                PaymentStatus.PENDING,
+                PaymentStatus.PROCESSING,
+                occurredAt,
+                "john",
+                "BR-001"
+        );
+
+        assertEquals(
+                "john",
+                audit.getPerformedBy()
+        );
+
+        assertEquals(
+                "BR-001",
+                audit.getBranchCode()
+        );
+    }
+    @Test
+    void shouldRejectPaymentAuditWithoutActor() {
+
+        LocalDateTime occurredAt =
+                LocalDateTime.of(2026, 10, 8, 11, 0);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new PaymentAudit(
+                        "PAY-AUDIT-002",
+                        PaymentAuditAction.STATUS_CHANGE,
+                        PaymentStatus.PENDING,
+                        PaymentStatus.PROCESSING,
+                        occurredAt,
+                        null,
+                        "BR-001"
+                )
+        );
+    }
 }
