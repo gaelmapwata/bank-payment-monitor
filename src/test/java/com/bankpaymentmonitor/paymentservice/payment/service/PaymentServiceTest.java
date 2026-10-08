@@ -31,6 +31,12 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceTest {
@@ -712,4 +718,443 @@ class PaymentServiceTest {
                         any(PaymentStatus.class)
                 );
     }
+    @Test
+    void shouldLogPaymentStatusChangeWhenMarkingAsProcessing() {
+
+        // GIVEN
+        Payment payment = new Payment(
+                "PAY-LOG-001",
+                "DEMO_SYSTEM",
+                "TXN-LOG-001",
+                "BR-001",
+                new BigDecimal("100.00"),
+                "USD",
+                now
+        );
+
+        when(paymentRepository.findByReference("PAY-LOG-001"))
+                .thenReturn(Optional.of(payment));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(
+                PaymentService.class
+        );
+
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            // WHEN
+            paymentService.markAsProcessing("PAY-LOG-001");
+
+            // THEN
+            boolean logFound = appender.list.stream()
+                    .anyMatch(event ->
+                            event.getLevel() == Level.INFO
+                                    && event.getFormattedMessage()
+                                    .contains("Payment status changed")
+                                    && event.getFormattedMessage()
+                                    .contains("reference=PAY-LOG-001")
+                                    && event.getFormattedMessage()
+                                    .contains("from=PENDING")
+                                    && event.getFormattedMessage()
+                                    .contains("to=PROCESSING")
+                    );
+
+            assertTrue(
+                    logFound,
+                    "Expected an INFO log for the payment status transition"
+            );
+
+            verify(paymentAuditService).recordStatusChange(
+                    "PAY-LOG-001",
+                    PaymentStatus.PENDING,
+                    PaymentStatus.PROCESSING
+            );
+
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+    @Test
+    void shouldLogPaymentStatusChangeWhenMarkingAsSuccess() {
+
+        // GIVEN
+        Payment payment = new Payment(
+                "PAY-LOG-002",
+                "DEMO_SYSTEM",
+                "TXN-LOG-002",
+                "BR-001",
+                new BigDecimal("150.00"),
+                "USD",
+                now
+        );
+
+        payment.markAsProcessing(now);
+
+        when(paymentRepository.findByReference("PAY-LOG-002"))
+                .thenReturn(Optional.of(payment));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(
+                PaymentService.class
+        );
+
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            // WHEN
+            paymentService.markAsSuccess("PAY-LOG-002");
+
+            // THEN
+            boolean logFound = appender.list.stream()
+                    .anyMatch(event ->
+                            event.getLevel() == Level.INFO
+                                    && event.getFormattedMessage()
+                                    .contains("Payment status changed")
+                                    && event.getFormattedMessage()
+                                    .contains("reference=PAY-LOG-002")
+                                    && event.getFormattedMessage()
+                                    .contains("from=PROCESSING")
+                                    && event.getFormattedMessage()
+                                    .contains("to=SUCCESS")
+                    );
+
+            assertTrue(
+                    logFound,
+                    "Expected an INFO log for a successful payment transition"
+            );
+
+            verify(paymentAuditService).recordStatusChange(
+                    "PAY-LOG-002",
+                    PaymentStatus.PROCESSING,
+                    PaymentStatus.SUCCESS
+            );
+
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+    @Test
+    void shouldLogPaymentStatusChangeWhenMarkingAsFailed() {
+
+        // GIVEN
+        Payment payment = new Payment(
+                "PAY-LOG-003",
+                "DEMO_SYSTEM",
+                "TXN-LOG-003",
+                "BR-001",
+                new BigDecimal("200.00"),
+                "USD",
+                now
+        );
+
+        payment.markAsProcessing(now);
+
+        when(paymentRepository.findByReference("PAY-LOG-003"))
+                .thenReturn(Optional.of(payment));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(
+                PaymentService.class
+        );
+
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            // WHEN
+            paymentService.markAsFailed("PAY-LOG-003");
+
+            // THEN
+            boolean logFound = appender.list.stream()
+                    .anyMatch(event ->
+                            event.getLevel() == Level.INFO
+                                    && event.getFormattedMessage()
+                                    .contains("Payment status changed")
+                                    && event.getFormattedMessage()
+                                    .contains("reference=PAY-LOG-003")
+                                    && event.getFormattedMessage()
+                                    .contains("from=PROCESSING")
+                                    && event.getFormattedMessage()
+                                    .contains("to=FAILED")
+                    );
+
+            assertTrue(
+                    logFound,
+                    "Expected an INFO log for a failed payment transition"
+            );
+
+            verify(paymentAuditService).recordStatusChange(
+                    "PAY-LOG-003",
+                    PaymentStatus.PROCESSING,
+                    PaymentStatus.FAILED
+            );
+
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+    @Test
+    void shouldLogWarningWhenPaymentStatusTransitionIsInvalid() {
+
+        // GIVEN : un paiement déjà terminé avec SUCCESS
+        Payment payment = new Payment(
+                "PAY-LOG-004",
+                "DEMO_SYSTEM",
+                "TXN-LOG-004",
+                "BR-001",
+                new BigDecimal("250.00"),
+                "USD",
+                now
+        );
+
+        payment.markAsProcessing(now);
+        payment.markAsSuccess(now);
+
+        when(paymentRepository.findByReference("PAY-LOG-004"))
+                .thenReturn(Optional.of(payment));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(
+                PaymentService.class
+        );
+
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            // WHEN : tentative de transition SUCCESS -> FAILED
+            assertThrows(
+                    InvalidPaymentStatusTransitionException.class,
+                    () -> paymentService.markAsFailed("PAY-LOG-004")
+            );
+
+            // THEN : un avertissement doit être enregistré
+            boolean warningFound = appender.list.stream()
+                    .anyMatch(event ->
+                            event.getLevel() == Level.WARN
+                                    && event.getFormattedMessage()
+                                    .contains("Payment status transition rejected")
+                                    && event.getFormattedMessage()
+                                    .contains("reference=PAY-LOG-004")
+                                    && event.getFormattedMessage()
+                                    .contains("from=SUCCESS")
+                                    && event.getFormattedMessage()
+                                    .contains("to=FAILED")
+                    );
+
+            assertTrue(
+                    warningFound,
+                    "Expected a WARN log for the rejected payment transition"
+            );
+
+            // Le statut reste inchangé
+            assertEquals(PaymentStatus.SUCCESS, payment.getStatus());
+
+            // Aucun faux changement de statut dans l'audit
+            verify(paymentAuditService, never())
+                    .recordStatusChange(
+                            anyString(),
+                            any(PaymentStatus.class),
+                            any(PaymentStatus.class)
+                    );
+
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+    @Test
+    void shouldLogWarningWhenMarkAsSuccessIsRejected() {
+
+        // GIVEN : paiement déjà terminé
+        Payment payment = new Payment(
+                "PAY-LOG-005",
+                "DEMO_SYSTEM",
+                "TXN-LOG-005",
+                "BR-001",
+                new BigDecimal("300.00"),
+                "USD",
+                now
+        );
+
+        payment.markAsProcessing(now);
+        payment.markAsSuccess(now);
+
+        when(paymentRepository.findByReference("PAY-LOG-005"))
+                .thenReturn(Optional.of(payment));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(
+                PaymentService.class
+        );
+
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            // WHEN : tentative SUCCESS -> SUCCESS
+            assertThrows(
+                    InvalidPaymentStatusTransitionException.class,
+                    () -> paymentService.markAsSuccess("PAY-LOG-005")
+            );
+
+            // THEN : log WARN attendu
+            boolean warningFound = appender.list.stream()
+                    .anyMatch(event ->
+                            event.getLevel() == Level.WARN
+                                    && event.getFormattedMessage()
+                                    .contains("Payment status transition rejected")
+                                    && event.getFormattedMessage()
+                                    .contains("reference=PAY-LOG-005")
+                                    && event.getFormattedMessage()
+                                    .contains("from=SUCCESS")
+                                    && event.getFormattedMessage()
+                                    .contains("to=SUCCESS")
+                    );
+
+            assertTrue(warningFound);
+
+            assertEquals(PaymentStatus.SUCCESS, payment.getStatus());
+
+            verify(paymentAuditService, never())
+                    .recordStatusChange(
+                            anyString(),
+                            any(PaymentStatus.class),
+                            any(PaymentStatus.class)
+                    );
+
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+    @Test
+    void shouldLogWarningWhenMarkAsProcessingIsRejected() {
+
+        // GIVEN : un paiement déjà en PROCESSING
+        Payment payment = new Payment(
+                "PAY-LOG-006",
+                "DEMO_SYSTEM",
+                "TXN-LOG-006",
+                "BR-001",
+                new BigDecimal("400.00"),
+                "USD",
+                now
+        );
+
+        payment.markAsProcessing(now);
+
+        when(paymentRepository.findByReference("PAY-LOG-006"))
+                .thenReturn(Optional.of(payment));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(
+                PaymentService.class
+        );
+
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            // WHEN : tentative PROCESSING -> PROCESSING
+            assertThrows(
+                    InvalidPaymentStatusTransitionException.class,
+                    () -> paymentService.markAsProcessing("PAY-LOG-006")
+            );
+
+            // THEN : un log WARN doit être généré
+            boolean warningFound = appender.list.stream()
+                    .anyMatch(event ->
+                            event.getLevel() == Level.WARN
+                                    && event.getFormattedMessage()
+                                    .contains("Payment status transition rejected")
+                                    && event.getFormattedMessage()
+                                    .contains("reference=PAY-LOG-006")
+                                    && event.getFormattedMessage()
+                                    .contains("from=PROCESSING")
+                                    && event.getFormattedMessage()
+                                    .contains("to=PROCESSING")
+                    );
+
+            assertTrue(
+                    warningFound,
+                    "Expected a WARN log for rejected PROCESSING transition"
+            );
+
+            assertEquals(PaymentStatus.PROCESSING, payment.getStatus());
+
+            verify(paymentAlertService, never())
+                    .resolveOpenAlerts(anyString());
+
+            verify(paymentAuditService, never())
+                    .recordStatusChange(
+                            anyString(),
+                            any(PaymentStatus.class),
+                            any(PaymentStatus.class)
+                    );
+
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+    @Test
+    void shouldIncludeCorrelationIdInPaymentStatusChangeLog() {
+
+        String correlationId = "corr-test-123";
+
+        Payment payment = new Payment(
+                "PAY-CORR-002",
+                "DEMO_SYSTEM",
+                "TXN-CORR-002",
+                "BR-001",
+                new BigDecimal("400.00"),
+                "USD",
+                now
+        );
+
+        when(paymentRepository.findByReference("PAY-CORR-002"))
+                .thenReturn(Optional.of(payment));
+
+        Logger logger =
+                (Logger) LoggerFactory.getLogger(PaymentService.class);
+
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            MDC.put("correlationId", correlationId);
+
+            paymentService.markAsProcessing("PAY-CORR-002");
+
+            boolean correlationFound = appender.list.stream()
+                    .anyMatch(event ->
+                            event.getLevel() == Level.INFO
+                                    && event.getFormattedMessage()
+                                    .contains("Payment status changed")
+                                    && correlationId.equals(
+                                    event.getMDCPropertyMap()
+                                            .get("correlationId")
+                            )
+                    );
+
+            assertTrue(
+                    correlationFound,
+                    "Expected payment business log to contain correlationId"
+            );
+
+        } finally {
+            MDC.remove("correlationId");
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
 }

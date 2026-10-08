@@ -125,12 +125,25 @@ class AuthControllerTest {
     @Test
     void shouldRejectTamperedBearerToken() throws Exception {
 
+        // GIVEN
         String token = jwtService.generateToken("john");
 
-        String tamperedToken =
-                token.substring(0, token.length() - 1)
-                        + (token.endsWith("a") ? "b" : "a");
+        String[] parts = token.split("\\.");
 
+        assertEquals(3, parts.length);
+
+        // Modifier un caractère du payload encodé
+        String payload = parts[1];
+
+        String tamperedPayload =
+                (payload.charAt(0) == 'a' ? "b" : "a")
+                        + payload.substring(1);
+
+        // Reconstruire le JWT avec sa signature originale
+        String tamperedToken =
+                parts[0] + "." + tamperedPayload + "." + parts[2];
+
+        // WHEN / THEN
         mockMvc.perform(
                         get("/api/payments/status/PENDING")
                                 .servletPath("/api")

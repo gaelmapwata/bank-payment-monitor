@@ -38,6 +38,10 @@ import java.util.List;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import org.slf4j.MDC;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.doAnswer;
 
 
 @SpringBootTest
@@ -789,5 +793,56 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.message").value("Authentication is required"));
 
         verifyNoInteractions(paymentService);
+    }
+    @Test
+    void shouldPropagateCorrelationIdFromHttpRequestToPaymentService()
+            throws Exception {
+
+        String reference = "PAY-CORR-001";
+
+        PaymentResponseDTO response = new PaymentResponseDTO(
+                reference,
+                "DEMO_SYSTEM",
+                "TXN-CORR-001",
+                "BR-001",
+                new BigDecimal("150.00"),
+                "USD",
+                "PROCESSING"
+        );
+
+        when(branchAccessService.canAccessPayment(
+                any(CustomUserPrincipal.class),
+                eq(reference)
+        )).thenReturn(true);
+
+        java.util.concurrent.atomic.AtomicReference<String> correlationIdInService =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        doAnswer(invocation -> {
+            correlationIdInService.set(MDC.get("correlationId"));
+            return response;
+        }).when(paymentService).markAsProcessing(reference);
+
+        String responseCorrelationId = mockMvc.perform(
+                        patch("/api/payments/{reference}/processing", reference)
+                                .servletPath("/api")
+                                .with(user(createBranchUser()))
+                )
+                .andExpect(status().isOk())
+                .andExpect(header().exists("X-Correlation-ID"))
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                .andReturn()
+                .getResponse()
+                .getHeader("X-Correlation-ID");
+
+        assertNotNull(responseCorrelationId);
+        assertEquals(responseCorrelationId, correlationIdInService.get());
+        assertDoesNotThrow(
+                () -> java.util.UUID.fromString(responseCorrelationId)
+        );
+
+        assertNull(MDC.get("correlationId"));
+
+        verify(paymentService).markAsProcessing(reference);
     }
 }

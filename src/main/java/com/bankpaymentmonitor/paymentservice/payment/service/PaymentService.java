@@ -6,6 +6,7 @@ import com.bankpaymentmonitor.paymentservice.payment.dto.PaymentCreateDTO;
 import com.bankpaymentmonitor.paymentservice.payment.dto.PaymentResponseDTO;
 import com.bankpaymentmonitor.paymentservice.payment.entity.Payment;
 import com.bankpaymentmonitor.paymentservice.payment.enums.PaymentStatus;
+import com.bankpaymentmonitor.paymentservice.payment.exception.InvalidPaymentStatusTransitionException;
 import com.bankpaymentmonitor.paymentservice.payment.exception.PaymentAlreadyExistsException;
 import com.bankpaymentmonitor.paymentservice.payment.exception.PaymentNotFoundException;
 import com.bankpaymentmonitor.paymentservice.payment.mapper.PaymentMapper;
@@ -20,9 +21,14 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class PaymentService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(PaymentService.class);
 
     private final PaymentMonitoringProperties monitoringProperties;
     private final PaymentRepository paymentRepository;
@@ -120,11 +126,22 @@ public class PaymentService {
     public PaymentResponseDTO markAsProcessing(String reference) {
 
         Payment payment = findPaymentByReference(reference);
+
         PaymentStatus previousStatus = payment.getStatus();
 
-        payment.markAsProcessing(
-                LocalDateTime.now(clock)
-        );
+        try {
+            payment.markAsProcessing(LocalDateTime.now(clock));
+
+        } catch (InvalidPaymentStatusTransitionException ex) {
+
+            logRejectedStatusTransition(
+                    payment,
+                    previousStatus,
+                    PaymentStatus.PROCESSING
+            );
+
+            throw ex;
+        }
 
         paymentAlertService.resolveOpenAlerts(
                 payment.getReference()
@@ -136,6 +153,8 @@ public class PaymentService {
                 payment.getStatus()
         );
 
+        logPaymentStatusChange(payment, previousStatus);
+
         return paymentMapper.toResponseDTO(payment);
     }
     @Transactional
@@ -145,13 +164,27 @@ public class PaymentService {
 
         PaymentStatus previousStatus = payment.getStatus();
 
-        payment.markAsSuccess(LocalDateTime.now(clock));
+        try {
+            payment.markAsSuccess(LocalDateTime.now(clock));
+
+        } catch (InvalidPaymentStatusTransitionException ex) {
+
+            logRejectedStatusTransition(
+                    payment,
+                    previousStatus,
+                    PaymentStatus.SUCCESS
+            );
+
+            throw ex;
+        }
 
         paymentAuditService.recordStatusChange(
                 payment.getReference(),
                 previousStatus,
                 payment.getStatus()
         );
+
+        logPaymentStatusChange(payment, previousStatus);
 
         return paymentMapper.toResponseDTO(payment);
     }
@@ -162,13 +195,25 @@ public class PaymentService {
 
         PaymentStatus previousStatus = payment.getStatus();
 
-        payment.markAsFailed(LocalDateTime.now(clock));
+        try {
+            payment.markAsFailed(LocalDateTime.now(clock));
+        } catch (InvalidPaymentStatusTransitionException ex) {
+
+            logRejectedStatusTransition(
+                    payment,
+                    previousStatus,
+                    PaymentStatus.FAILED
+            );
+
+            throw ex;
+        }
 
         paymentAuditService.recordStatusChange(
                 payment.getReference(),
                 previousStatus,
                 payment.getStatus()
         );
+        logPaymentStatusChange(payment, previousStatus);
 
         return paymentMapper.toResponseDTO(payment);
     }
@@ -231,6 +276,29 @@ public class PaymentService {
                 .stream()
                 .map(paymentMapper::toResponseDTO)
                 .toList();
+    }
+    private void logPaymentStatusChange(
+            Payment payment,
+            PaymentStatus previousStatus
+    ) {
+        log.info(
+                "Payment status changed reference={} from={} to={}",
+                payment.getReference(),
+                previousStatus,
+                payment.getStatus()
+        );
+    }
+    private void logRejectedStatusTransition(
+            Payment payment,
+            PaymentStatus previousStatus,
+            PaymentStatus targetStatus
+    ) {
+        log.warn(
+                "Payment status transition rejected reference={} from={} to={}",
+                payment.getReference(),
+                previousStatus,
+                targetStatus
+        );
     }
 
 }
