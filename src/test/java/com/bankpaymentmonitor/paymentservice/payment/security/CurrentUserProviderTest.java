@@ -2,6 +2,7 @@ package com.bankpaymentmonitor.paymentservice.payment.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -178,6 +179,44 @@ class CurrentUserProviderTest {
                     new CurrentUserProvider();
 
             assertEquals("john", provider.getUsername());
+
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+    @Test
+    void shouldReturnAuthenticatedUserRole() {
+
+        // GIVEN
+        AppUser user = new AppUser(
+                "john",
+                "encoded-password",
+                "BR-001",
+                Role.USER,
+                true
+        );
+
+        CustomUserPrincipal principal =
+                new CustomUserPrincipal(user);
+
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken(
+                        principal,
+                        null,
+                        principal.getAuthorities()
+                );
+
+        SecurityContextHolder.getContext()
+                .setAuthentication(authentication);
+
+        try {
+            CurrentUserProvider provider =
+                    new CurrentUserProvider();
+            // WHEN
+            Role role = provider.getRole();
+
+            // THEN
+            assertEquals(Role.USER, role);
 
         } finally {
             SecurityContextHolder.clearContext();

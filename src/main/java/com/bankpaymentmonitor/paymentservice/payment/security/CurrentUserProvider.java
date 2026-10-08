@@ -43,5 +43,23 @@ public class CurrentUserProvider {
 
         return principal.getBranchCode();
     }
+    public Role getRole() {
+
+        Authentication authentication =
+                SecurityContextHolder.getContext()
+                        .getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal()
+                instanceof CustomUserPrincipal principal)) {
+
+            throw new IllegalStateException(
+                    "No authenticated application user found"
+            );
+        }
+
+        return principal.getRole();
+    }
 
 }
