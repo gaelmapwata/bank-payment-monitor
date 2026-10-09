@@ -11,12 +11,12 @@ import com.bankpaymentmonitor.paymentservice.payment.exception.InvalidPaymentSta
 import com.bankpaymentmonitor.paymentservice.payment.exception.PaymentAlreadyExistsException;
 import com.bankpaymentmonitor.paymentservice.payment.exception.PaymentNotFoundException;
 import com.bankpaymentmonitor.paymentservice.payment.mapper.PaymentMapper;
+import com.bankpaymentmonitor.paymentservice.payment.repository.PaymentOutboxRepository;
 import com.bankpaymentmonitor.paymentservice.payment.repository.PaymentRepository;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -52,6 +52,10 @@ class PaymentServiceTest {
     @Mock
     private PaymentAuditService paymentAuditService;
 
+    @Mock
+    private PaymentOutboxRepository paymentOutboxRepository;
+
+
     LocalDateTime now =
             LocalDateTime.of(2026, 10, 1, 12, 0);
 
@@ -78,7 +82,8 @@ class PaymentServiceTest {
                 paymentMapper,
                 fixedClock,
                 paymentAlertService,
-                paymentAuditService
+                paymentAuditService,
+                paymentOutboxRepository
         );
     }
 

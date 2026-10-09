@@ -15,7 +15,11 @@ import com.bankpaymentmonitor.paymentservice.config.PaymentMonitoringProperties;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 import org.hibernate.exception.ConstraintViolationException;
+import com.bankpaymentmonitor.paymentservice.payment.repository.PaymentOutboxRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
+import java.util.Map;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -36,6 +40,7 @@ public class PaymentService {
     private final PaymentAlertService paymentAlertService;
     private final PaymentAuditService paymentAuditService;
     private final Clock clock;
+    private final PaymentOutboxRepository paymentOutboxRepository;
 
     public PaymentService(
             PaymentMonitoringProperties monitoringProperties,
@@ -43,7 +48,8 @@ public class PaymentService {
             PaymentMapper paymentMapper,
             Clock clock,
             PaymentAlertService paymentAlertService,
-            PaymentAuditService paymentAuditService
+            PaymentAuditService paymentAuditService,
+            PaymentOutboxRepository paymentOutboxRepository
     ) {
         this.monitoringProperties = monitoringProperties;
         this.paymentRepository = paymentRepository;
@@ -51,6 +57,7 @@ public class PaymentService {
         this.clock = clock;
         this.paymentAlertService = paymentAlertService;
         this.paymentAuditService = paymentAuditService;
+        this.paymentOutboxRepository = paymentOutboxRepository;
 
     }
 
@@ -112,6 +119,10 @@ public class PaymentService {
 
             throw exception;
         }
+        paymentOutboxRepository.savePaymentCreated(
+                savedPayment.getReference(),
+                savedPayment.getSourceSystem()
+        );
         return paymentMapper.toResponseDTO(payment);
     }
     public List<PaymentResponseDTO> getPaymentsByBranch(String branchCode) {
